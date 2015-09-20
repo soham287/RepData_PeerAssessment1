@@ -1,25 +1,101 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "PA1_template.Rmd"
+author: "Soham Talukdar"
+date: "September 20, 2015"
+output: html_document
 ---
 
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-## Loading and preprocessing the data
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
+opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+require(knitr)
+require(ggplot2)
+require(scales)
+require(gsubfn)
+require(proto)
+require(tcltk)
+require(RSQLite)
+require(DBI)
+require(RSQLite.extfuns)
+unzip("activity.zip", files="activity.csv")
+data<-read.csv("activity.csv")
+data$date <- as.Date(data$date) 
+data.ignore.na <- na.omit(data) 
 
+# sum steps by date
+daily.steps <- rowsum(data.ignore.na$steps, format(data.ignore.na$date, '%Y-%m-%d')) 
+daily.steps <- data.frame(daily.steps) 
+names(daily.steps) <- ("steps") 
+hist(daily.steps$steps, 
+     main=" ",
+     breaks=10,
+     xlab="Total Number of Steps Taken Daily")
+mean(daily.steps$steps)
+median(daily.steps$steps)
+library(plyr)
+# Calculate average steps for each of 5-minute interval during a 24-hour period
+interval.mean.steps <- ddply(data.ignore.na,~interval, summarise, mean=mean(steps))
+library(ggplot2)
+qplot(x=interval, y=mean, data = interval.mean.steps,  geom = "line",
+      xlab="5-Minute Interval (military time)",
+      ylab="Number of Step Count",
+      main="Average Number of Steps Taken Averaged Across All Days"
+)
+interval.mean.steps[which.max(interval.mean.steps$mean), ]
+library(sqldf)
+tNA <- sqldf(' 
+    SELECT d.*            
+             FROM "data" as d
+             WHERE d.steps IS NULL 
+             ORDER BY d.date, d.interval ') 
+NROW(tNA)
+install.packages("tcltk")
+library(tcltk)
+t1 <- sqldf('  
+    SELECT d.*, i.mean
+            FROM "interval.mean.steps" as i
+            JOIN "data" as d
+            ON d.interval = i.interval 
+            ORDER BY d.date, d.interval ') 
 
-## What is mean total number of steps taken per day?
+t1$steps[is.na(t1$steps)] <- t1$mean[is.na(t1$steps)]
+t1.total.steps <- as.integer( sqldf(' 
+    SELECT sum(steps)  
+                                    FROM t1') );
 
+t1.total.steps.by.date <- sqldf(' 
+                                SELECT date, sum(steps) as "t1.total.steps.by.date" 
+                                FROM t1 GROUP BY date 
+                                ORDER BY date') 
 
+daily.61.steps <- sqldf('   
+                        SELECT date, t1_total_steps_by_date as "steps"
+                        FROM "t1.total.steps.by.date"
+                        ORDER BY date') 
+hist(daily.61.steps$steps, 
+     main=" ",
+     breaks=10,
+     xlab="After Imputate NA -Total Number of Steps Taken Daily")
+t1.mean.steps.per.day <- as.integer(t1.total.steps / NROW(t1.total.steps.by.date) )
+t1.mean.steps.per.day
+t1.median.steps.per.day <- median(t1.total.steps.by.date$t1.total.steps.by.date)
+t1.median.steps.per.day
+t1$weektime <- as.factor(ifelse(weekdays(t1$date) %in% 
+                                  c("Saturday","Sunday"),"weekend", "weekday"))
 
-## What is the average daily activity pattern?
+t5 <- sqldf('   
+            SELECT interval, avg(steps) as "mean.steps", weektime
+            FROM t1
+            GROUP BY weektime, interval
+            ORDER BY interval ')
+library("lattice")
+p <- xyplot(mean.steps ~ interval | factor(weektime), data=t5, 
+            type = 'l',
+            main="Average Number of Steps Taken 
+            \nAveraged Across All Weekday Days or Weekend Days",
+            xlab="5-Minute Interval (military time)",
+            ylab="Average Number of Steps Taken")
+print (p)
 
-
-
-## Imputing missing values
-
-
-
-## Are there differences in activity patterns between weekdays and weekends?
